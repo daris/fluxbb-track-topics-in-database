@@ -9,7 +9,7 @@ $author         = 'Daris';
 $author_email   = 'daris91@gmail.com';
 
 // Versions of FluxBB this mod was created for. A warning will be displayed, if versions do not match
-$fluxbb_versions= array('1.4.5', '1.4.4');
+$fluxbb_versions= array('1.4.7', '1.4.6', '1.4.5', '1.4.4');
 
 // Set this to false if you haven't implemented the restore function (see below)
 $mod_restore	= true;
