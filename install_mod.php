@@ -138,3 +138,11 @@ else
 
 </body>
 </html>
+
+<?php
+
+// End the transaction
+$db->end_transaction();
+
+// Close the db connection (and free up any result data)
+$db->close();
