@@ -2,15 +2,15 @@
 ##
 ##        Mod title:  Track topics in database
 ##
-##      Mod version:  1.1
-##  Works on FluxBB:  1.4.7, 1.4.6, 1.4.5, 1.4.4
-##     Release date:  2011-04-08
-##      Review date:  YYYY-MM-DD (Leave unedited)
+##      Mod version:  1.1.1
+##  Works on FluxBB:  1.4.8, 1.4.7, 1.4.6, 1.4.5, 1.4.4
+##     Release date:  2012-01-21
+##      Review date:  2012-01-21
 ##           Author:  Daris (daris91@gmail.com)
 ##
-##      Description:  Topics and forums you have read since your last logon 
-##                    are saved in the database instead of a tracking cookie 
-##                    (useful when you log in from different locations and 
+##      Description:  Topics and forums you have read since your last logon
+##                    are saved in the database instead of a tracking cookie
+##                    (useful when you log in from different locations and
 ##                    your board has a long visit timeout)
 ##
 ##   Repository URL:  http://fluxbb.org/resources/mods/track-topics-in-database/
@@ -21,7 +21,7 @@
 ##       Affects DB:  Yes
 ##
 ##       DISCLAIMER:  Please note that "mods" are not officially supported by
-##                    FluxBB. Installation of this modification is done at 
+##                    FluxBB. Installation of this modification is done at
 ##                    your own risk. Backup your forum database and any and
 ##                    all applicable files before proceeding.
 ##
@@ -89,7 +89,7 @@ include/functions.php
 			if ($cur_user['logged'] < ($now-$pun_config['o_timeout_visit']))
 			{
 				$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$cur_user['logged'].', tracked_topics=null WHERE id='.$cur_user['user_id']) or error('Unable to update user visit data', __FILE__, __LINE__, $db->error());
-				
+
 #
 #---------[ 7. FIND (line: 208) ]---------------------------------------------
 #
