@@ -75,7 +75,6 @@ function install()
 
 
 	$db->add_field('users', 'last_mark', 'INT(10)', true, '0');
-	$db->query('UPDATE '.$db->prefix.'users SET last_mark = last_visit');
 }
 
 // This following function will be called when the user presses the "Restore" button (only if $mod_restore is true (see above))

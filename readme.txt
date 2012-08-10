@@ -66,73 +66,22 @@ include/functions.php
 				// set_tracked_topics(null);
 
 #
-#---------[ 5. FIND ]---------------------------------------------
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
 #
 
-//
-// Save array of tracked topics in cookie
-//
-function set_tracked_topics($tracked_topics)
-{
-	global $cookie_name, $cookie_path, $cookie_domain, $cookie_secure, $pun_config;
-
-	$cookie_data = '';
-	if (!empty($tracked_topics))
-	{
-		// Sort the arrays (latest read first)
-		arsort($tracked_topics['topics'], SORT_NUMERIC);
-		arsort($tracked_topics['forums'], SORT_NUMERIC);
-
-		// Homebrew serialization (to avoid having to run unserialize() on cookie data)
-		foreach ($tracked_topics['topics'] as $id => $timestamp)
-			$cookie_data .= 't'.$id.'='.$timestamp.';';
-		foreach ($tracked_topics['forums'] as $id => $timestamp)
-			$cookie_data .= 'f'.$id.'='.$timestamp.';';
-
-		// Enforce a byte size limit (4096 minus some space for the cookie name - defaults to 4048)
-		if (strlen($cookie_data) > FORUM_MAX_COOKIE_SIZE)
-		{
-			$cookie_data = substr($cookie_data, 0, FORUM_MAX_COOKIE_SIZE);
-			$cookie_data = substr($cookie_data, 0, strrpos($cookie_data, ';')).';';
-		}
-	}
-
-	forum_setcookie($cookie_name.'_track', $cookie_data, time() + $pun_config['o_timeout_visit']);
-	$_COOKIE[$cookie_name.'_track'] = $cookie_data; // Set it directly in $_COOKIE as well
-}
-
-
-//
-// Extract array of tracked topics from cookie
-//
-function get_tracked_topics()
-{
-	global $cookie_name;
-
-	$cookie_data = isset($_COOKIE[$cookie_name.'_track']) ? $_COOKIE[$cookie_name.'_track'] : false;
-	if (!$cookie_data)
-		return array('topics' => array(), 'forums' => array());
-
-	if (strlen($cookie_data) > FORUM_MAX_COOKIE_SIZE)
-		return array('topics' => array(), 'forums' => array());
-
-	// Unserialize data from cookie
-	$tracked_topics = array('topics' => array(), 'forums' => array());
-	$temp = explode(';', $cookie_data);
-	foreach ($temp as $t)
-	{
-		$type = substr($t, 0, 1) == 'f' ? 'forums' : 'topics';
-		$id = intval(substr($t, 1));
-		$timestamp = intval(substr($t, strpos($t, '=') + 1));
-		if ($id > 0 && $timestamp > 0)
-			$tracked_topics[$type][$id] = $timestamp;
-	}
-
-	return $tracked_topics;
-}
+				// Update tracked topics with the current expire time
+				if (isset($_COOKIE[$cookie_name.'_track']))
+					forum_setcookie($cookie_name.'_track', $_COOKIE[$cookie_name.'_track'], $now + $pun_config['o_timeout_visit']);
 
 #
-#---------[ 5. REPLACE WITH ]---------------------------------------------
+#---------[ 8. REPLACE WITH (just delete the above line) ]---------------------------------------------------
+#
+				// Update tracked topics with the current expire time
+				// if (isset($_COOKIE[$cookie_name.'_track']))
+				// 	forum_setcookie($cookie_name.'_track', $_COOKIE[$cookie_name.'_track'], $now + $pun_config['o_timeout_visit']);
+
+#
+#---------[ 5. AT THE END OF FILE ADD ]---------------------------------------------
 #
 
 //
@@ -149,9 +98,9 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 		if ($forum_id !== false || !empty($forum_id))
 			return false;
 
-		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id']);
-		$db->query('DELETE FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id']);
-		$db->query('UPDATE '.$db->prefix.'users SET last_mark = '.time().' WHERE id = '.$pun_user['id']);
+		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id']) or error('Unable to delete topics track', __FILE__, __LINE__, $db->error());
+		$db->query('DELETE FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id']) or error('Unable to delete forums track', __FILE__, __LINE__, $db->error());
+		$db->query('UPDATE '.$db->prefix.'users SET last_mark = '.time().' WHERE id = '.$pun_user['id']) or error('Unable to update last mark value', __FILE__, __LINE__, $db->error());
 	}
 	else if ($mode == 'forum')
 	{
@@ -170,7 +119,7 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 					(tt.mark_time IS NOT NULL AND t.last_post > tt.mark_time) OR
 					(tt.mark_time IS NULL AND ft.mark_time IS NOT NULL AND t.last_post > ft.mark_time) OR
 					(tt.mark_time IS NULL AND ft.mark_time IS NULL))
-			LIMIT 1');
+			LIMIT 1') or error('Unable to check for unread topics', __FILE__, __LINE__, $db->error());
 
 		// If there aren't, delete user's topic and forum tracks and update user's last_mark value
 		if (!$db->num_rows($result))
@@ -180,16 +129,16 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 		}
 
 		// Delete user's topic track entries
-		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id '.$forum_id_sql);
+		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id '.$forum_id_sql) or error('Unable to delete topics track', __FILE__, __LINE__, $db->error());
 
 		// Update forum last mark value for the current user (or insert when it does not exist)
 		foreach ($forum_id as $fid)
 		{
-			$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid);
+			$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid) or error('Unable to get forums track', __FILE__, __LINE__, $db->error());
 			if ($db->num_rows($result))
-				$db->query('UPDATE '.$db->prefix.'forums_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid);
+				$db->query('UPDATE '.$db->prefix.'forums_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid) or error('Unable to update forums track', __FILE__, __LINE__, $db->error());
 			else
-				$db->query('INSERT INTO '.$db->prefix.'forums_track (user_id, forum_id, mark_time) VALUES('.$pun_user['id'].', '.$fid.', '.time().')');
+				$db->query('INSERT INTO '.$db->prefix.'forums_track (user_id, forum_id, mark_time) VALUES('.$pun_user['id'].', '.$fid.', '.time().')') or error('Unable to insert forums track', __FILE__, __LINE__, $db->error());
 		}
 	}
 	else if ($mode == 'topic')
@@ -202,11 +151,11 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 			$mark_time = $pun_user['last_mark'];
 
 		// Update topic track last mark value (or insert when it does not exist)
-		$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id.' AND topic_id = '.$topic_id);
+		$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id.' AND topic_id = '.$topic_id) or error('Unable to get topics track', __FILE__, __LINE__, $db->error());
 		if ($db->num_rows($result))
-			$db->query('UPDATE '.$db->prefix.'topics_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id.' AND topic_id = '.$topic_id);
+			$db->query('UPDATE '.$db->prefix.'topics_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id.' AND topic_id = '.$topic_id) or error('Unable to update topics track', __FILE__, __LINE__, $db->error());
 		else
-			$db->query('INSERT INTO '.$db->prefix.'topics_track (user_id, forum_id, topic_id, mark_time) VALUES('.$pun_user['id'].', '.$forum_id.', '.$topic_id.', '.time().')');
+			$db->query('INSERT INTO '.$db->prefix.'topics_track (user_id, forum_id, topic_id, mark_time) VALUES('.$pun_user['id'].', '.$forum_id.', '.$topic_id.', '.time().')') or error('Unable to insert topics track', __FILE__, __LINE__, $db->error());
 
 		// Check the forum for any left unread topics (if we do not mark forum as read before).
 		// If there are none, we mark the forum as read.
@@ -215,7 +164,7 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 			$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics AS t
 				LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id
 				WHERE t.forum_id = '.$forum_id.' AND t.last_post > '.$mark_time.' AND t.moved_to IS NULL AND (tt.topic_id IS NULL OR tt.mark_time < t.last_post)
-				LIMIT 1');
+				LIMIT 1') or error('Unable to get unread topics', __FILE__, __LINE__, $db->error());
 
 			if (!$db->num_rows($result))
 				mark_read('forum', $forum_id);
@@ -228,7 +177,7 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 // This function is very much inspired by the get_topic_tracking_info()
 // from the phpBB Group forum software phpBB3 (http://www.phpbb.com)
 //
-function get_tracked_topics($forum_id, $topic_ids, $topic_list, $forum_mark_time)
+function get_topic_tracking_info($forum_id, $topic_ids, $topic_list, $forum_mark_time)
 {
 	global $pun_user;
 
@@ -261,6 +210,60 @@ function get_tracked_topics($forum_id, $topic_ids, $topic_list, $forum_mark_time
 	return $last_read;
 }
 
+//
+// Move tracked topics from cookie to database
+//
+function convert_tracked_topics()
+{
+	global $db, $pun_user, $cookie_name;
+
+	// We need to convert cookie to database only on first user login
+	if ($pun_user['last_mark'] != 0)
+		return false;
+
+	$tracked_topics = get_tracked_topics();
+
+	// Skip when cookie does not exist or when there are no tracked forums/topics
+	if (empty($tracked_topics['forums']) && empty($tracked_topics['topics']))
+		return false;
+
+	$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id']) or error('Unable to get topics track', __FILE__, __LINE__, $db->error());
+	// Users have already his tracked topic settings in database
+	if ($db->num_rows($result))
+		return false;
+
+	$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id']) or error('Unable to get forums track', __FILE__, __LINE__, $db->error());
+	// Users have already his tracked forums settings in database
+	if ($db->num_rows($result))
+		return false;
+
+	$pun_user['last_mark'] = $pun_user['last_visit'];
+	$db->query('UPDATE '.$db->prefix.'users SET last_mark = '.$pun_user['last_mark'].' WHERE id = '.$pun_user['id']) or error('Unable to update user', __FILE__, __LINE__, $db->error());
+
+	foreach ($tracked_topics['forums'] as $cur_forum => $timestamp)
+		$db->query('INSERT INTO '.$db->prefix.'forums_track (user_id, forum_id, mark_time) VALUES('.$pun_user['id'].', '.$cur_forum.', '.$timestamp.')') or error('Unable to insert tracked forums', __FILE__, __LINE__, $db->error());
+
+	foreach ($tracked_topics['topics'] as $topic_id => $timestamp)
+	{
+		$result = $db->query('SELECT forum_id, last_post FROM '.$db->prefix.'topics WHERE id = '.$topic_id) or error('Unable to get topic info', __FILE__, __LINE__, $db->error());
+		$cur_topic = $db->fetch_assoc($result);
+
+		$result = $db->query('SELECT mark_time FROM '.$db->prefix.'forums_track WHERE forum_id = '.$cur_topic['forum_id']) or error('Unable to get topics track', __FILE__, __LINE__, $db->error());
+		$forum_mark_time = false;
+		if ($db->num_rows($result))
+			$forum_mark_time = intval($db->result($result));
+
+		mark_read('topic', $cur_topic['forum_id'], $topic_id, $timestamp, $cur_topic['last_post'], $forum_mark_time);
+	}
+
+	// Delete cookie
+	if (isset($_COOKIE[$cookie_name.'_track']))
+	{
+		forum_setcookie($cookie_name.'_track', '', time() - 3600);
+		unset($_COOKIE[$cookie_name.'_track']);
+	}
+}
+
 #
 #---------[ 7. FIND (line: 208) ]---------------------------------------------
 #
@@ -268,12 +271,32 @@ function get_tracked_topics($forum_id, $topic_ids, $topic_list, $forum_mark_time
 	// Delete any subscriptions for this topic
 	$db->query('DELETE FROM '.$db->prefix.'topic_subscriptions WHERE topic_id='.$topic_id) or error('Unable to delete subscriptions', __FILE__, __LINE__, $db->error());
 
+#
+#---------[ 8. AFTER ADD ]---------------------------------------------------
+#
+
+	$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE topic_id = '.$topic_id) or error('Unable to delete topics track', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+include/common.php
+
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	define('FORUM_MAX_COOKIE_SIZE', 4048);
 
 #
 #---------[ 8. AFTER ADD ]---------------------------------------------------
 #
 
-	$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE topic_id = '.$topic_id);
+// Move tracked topics from cookie to database
+if (!$pun_user['is_guest'])
+	convert_tracked_topics();
 
 #
 #---------[ 7. OPEN ]---------------------------------------------
@@ -501,7 +524,7 @@ if (!$pun_user['is_guest'])
 		foreach ($topics as $cur_topic)
 			$topic_list[$cur_topic['id']] = $cur_topic;
 
-		$tracked_topics = get_tracked_topics($id, $topic_ids, $topic_list, array($id => $cur_forum['forum_mark_time']), false);
+		$tracked_topics = get_topic_tracking_info($id, $topic_ids, $topic_list, array($id => $cur_forum['forum_mark_time']), false);
 	}
 
 	$topic_count = 0;
@@ -604,7 +627,7 @@ while ($cur_post = $db->fetch_assoc($result))
 
 // Get tracked topics
 if (!$pun_user['is_guest'])
-	$tracked_topics = get_tracked_topics($cur_topic['forum_id'], $id, array($id => $cur_topic), array($cur_topic['forum_id'] => $cur_topic['forum_mark_time']));
+	$tracked_topics = get_topic_tracking_info($cur_topic['forum_id'], $id, array($id => $cur_topic), array($cur_topic['forum_id'] => $cur_topic['forum_mark_time']));
 
 #
 #---------[ 7. FIND (line: 208) ]---------------------------------------------
@@ -765,7 +788,7 @@ $result = $db->query('SELECT f.forum_name, f.redirect_url, f.num_topics, f.sort_
 		foreach ($topics as $cur_topic)
 			$topic_list[$cur_topic['id']] = $cur_topic;
 
-		$tracked_topics = get_tracked_topics($fid, $topic_ids, $topic_list, array($fid => $cur_forum['forum_mark_time']), false);
+		$tracked_topics = get_topic_tracking_info($fid, $topic_ids, $topic_list, array($fid => $cur_forum['forum_mark_time']), false);
 	}
 
 	$topic_count = 0;
@@ -881,7 +904,7 @@ search.php
 			}
 
 			foreach ($forum_list as $f_id => $cur_forum)
-				$tracked_topics += get_tracked_topics($f_id, $cur_forum['topics'], $topic_list, array($f_id => $cur_forum['forum_mark_time']));
+				$tracked_topics += get_topic_tracking_info($f_id, $cur_forum['topics'], $topic_list, array($f_id => $cur_forum['forum_mark_time']));
 		}
 
 #
