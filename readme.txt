@@ -13,10 +13,25 @@
 ##                    (useful when you log in from different locations and
 ##                    your board has a long visit timeout)
 ##
+##Easy installation:  This mod can be easily installed via Patcher -> https://github.com/daris/fluxbb-patcher
+##
+## Upgrade from 1.x:  Restore orginal files (look into previous version readme.txt and do steps in reverse order)
+##                    Then install v2.0 - it'll automatically convert tracking data from old storage method
+##
 ##   Repository URL:  http://fluxbb.org/resources/mods/track-topics-in-database/
 ##
 ##   Affected files:  include/functions.php
+##                    include/common.php
+##                    index.php
+##                    login.php
 ##                    misc.php
+##                    viewforum.php
+##                    viewtopic.php
+##                    admin_forums.php
+##                    moderate.php
+##                    post.php
+##                    register.php
+##                    search.php
 ##
 ##       Affects DB:  Yes
 ##
@@ -217,23 +232,25 @@ function convert_tracked_topics()
 {
 	global $db, $pun_user, $cookie_name;
 
-	// We need to convert cookie to database only on first user login
+	// We need to convert only at user first login
 	if ($pun_user['last_mark'] != 0)
 		return false;
 
-	$tracked_topics = get_tracked_topics();
+	// Get tracked topics from users table (Track topics in database v1.x)
+	if (isset($pun_user['tracked_topics']))
+		$tracked_topics = empty($pun_user['tracked_topics']) ? array('forums' => array(), 'topics' => array()) : unserialize($pun_user['tracked_topics']);
 
-	// Skip when cookie does not exist or when there are no tracked forums/topics
-	if (empty($tracked_topics['forums']) && empty($tracked_topics['topics']))
-		return false;
+	// or load from cookie (FluxBB method)
+	else
+		$tracked_topics = get_tracked_topics();
 
 	$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id']) or error('Unable to get topics track', __FILE__, __LINE__, $db->error());
-	// Users have already his tracked topic settings in database
+	// User have already his tracked topic settings in database
 	if ($db->num_rows($result))
 		return false;
 
 	$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id']) or error('Unable to get forums track', __FILE__, __LINE__, $db->error());
-	// Users have already his tracked forums settings in database
+	// User have already his tracked forums settings in database
 	if ($db->num_rows($result))
 		return false;
 
