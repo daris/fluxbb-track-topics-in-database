@@ -2,10 +2,10 @@
 ##
 ##        Mod title:  Track topics in database
 ##
-##      Mod version:  1.1.1
-##  Works on FluxBB:  1.4.8, 1.4.7, 1.4.6, 1.4.5, 1.4.4
-##     Release date:  2012-01-21
-##      Review date:  2012-01-21
+##      Mod version:  2.0
+##  Works on FluxBB:  1.5.0, 1.5-beta, 1.4.9, 1.4.8, 1.4.7
+##     Release date:  2012-08-10
+##      Review date:  2012-08-10
 ##           Author:  Daris (daris91@gmail.com)
 ##
 ##      Description:  Topics and forums you have read since your last logon
@@ -16,7 +16,9 @@
 ##Easy installation:  This mod can be easily installed via Patcher -> https://github.com/daris/fluxbb-patcher
 ##
 ## Upgrade from 1.x:  Restore orginal files (look into previous version readme.txt and do steps in reverse order)
-##                    Then install v2.0 - it'll automatically convert tracking data from old storage method
+##                    Then install v2.0 - it'll automatically convert tracking data from old storage method.
+##                    WARNING: Do not uninstall previous version (install_mod.php file)
+##                    as you will lose the topic tracking data in database
 ##
 ##   Repository URL:  http://fluxbb.org/resources/mods/track-topics-in-database/
 ##
