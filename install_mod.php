@@ -18,17 +18,73 @@ $mod_restore	= true;
 // This following function will be called when the user presses the "Install" button
 function install()
 {
-	global $db, $db_type, $pun_config;
+	global $db;
 
-	$db->add_field('users', 'tracked_topics', 'TEXT', true);
+	$schema_forums_track = array(
+		'FIELDS'			=> array(
+				'user_id'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+				'forum_id'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+				'mark_time'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+		),
+		'PRIMARY KEY'		=> array('user_id', 'forum_id'),
+	);
+	$db->create_table('forums_track', $schema_forums_track) or error('Unable to create table', __FILE__, __LINE__, $db->error());
+
+
+	$schema_topics_track = array(
+		'FIELDS'			=> array(
+				'user_id'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+				'forum_id'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+				'topic_id'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+				'mark_time'	=> array(
+						'datatype'			=> 'INT(10)',
+						'allow_null'		=> false,
+						'default'		=> '0'
+				),
+		),
+		'PRIMARY KEY'		=> array('user_id', 'topic_id'),
+		'INDEXES'		=> array(
+			'forum_id_idx'		=> array('forum_id'),
+		)
+	);
+	$db->create_table('topics_track', $schema_topics_track) or error('Unable to create table', __FILE__, __LINE__, $db->error());
+
+
+	$db->add_field('users', 'last_mark', 'INT(10)', true, '0');
 }
 
 // This following function will be called when the user presses the "Restore" button (only if $mod_restore is true (see above))
 function restore()
 {
-	global $db, $db_type, $pun_config;
+	global $db;
 
-	$db->drop_field('users', 'tracked_topics');
+	$db->drop_field('users', 'last_mark');
+	$db->drop_table('topics_track');
+	$db->drop_table('forums_track');
 }
 
 /***********************************************************************/

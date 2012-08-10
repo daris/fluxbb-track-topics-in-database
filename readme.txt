@@ -24,7 +24,7 @@
 ##                    FluxBB. Installation of this modification is done at
 ##                    your own risk. Backup your forum database and any and
 ##                    all applicable files before proceeding.
-##
+##<?
 ##
 
 
@@ -53,45 +53,7 @@ install_mod.php
 include/functions.php
 
 #
-#---------[ 5. FIND (line: 10) ]---------------------------------------------
-#
-
-				// Special case: We've timed out, but no other user has browsed the forums since we timed out
-				if ($pun_user['logged'] < ($now-$pun_config['o_timeout_visit']))
-				{
-					$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$pun_user['logged'].' WHERE id='.$pun_user['id']) or error('Unable to update user visit data', __FILE__, __LINE__, $db->error());
-
-
-#
-#---------[ 6. REPLACE WITH ]-------------------------------------------------
-#
-
-				// Special case: We've timed out, but no other user has browsed the forums since we timed out
-				if ($pun_user['logged'] < ($now-$pun_config['o_timeout_visit']))
-				{
-					$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$pun_user['logged'].', tracked_topics=null WHERE id='.$pun_user['id']) or error('Unable to update user visit data', __FILE__, __LINE__, $db->error());
-
-#
-#---------[ 7. FIND (line: 208) ]---------------------------------------------
-#
-
-			// If the entry is older than "o_timeout_visit", update last_visit for the user in question, then delete him/her from the online list
-			if ($cur_user['logged'] < ($now-$pun_config['o_timeout_visit']))
-			{
-				$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$cur_user['logged'].' WHERE id='.$cur_user['user_id']) or error('Unable to update user visit data', __FILE__, __LINE__, $db->error());
-
-
-#
-#---------[ 8. REPLACE WITH ]---------------------------------------------------
-#
-
-			// If the entry is older than "o_timeout_visit", update last_visit for the user in question, then delete him/her from the online list
-			if ($cur_user['logged'] < ($now-$pun_config['o_timeout_visit']))
-			{
-				$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$cur_user['logged'].', tracked_topics=null WHERE id='.$cur_user['user_id']) or error('Unable to update user visit data', __FILE__, __LINE__, $db->error());
-
-#
-#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#---------[ 5. FIND ]---------------------------------------------
 #
 
 //
@@ -126,30 +88,6 @@ function set_tracked_topics($tracked_topics)
 	$_COOKIE[$cookie_name.'_track'] = $cookie_data; // Set it directly in $_COOKIE as well
 }
 
-#
-#---------[ 8. REPLACE WITH ]---------------------------------------------------
-#
-
-//
-// Save array of tracked topics to database
-//
-function set_tracked_topics($tracked_topics)
-{
-	global $pun_user, $db;
-	if (!empty($tracked_topics))
-	{
-		// Sort the arrays (latest read first)
-		arsort($tracked_topics['topics'], SORT_NUMERIC);
-		arsort($tracked_topics['forums'], SORT_NUMERIC);
-		$pun_user['tracked_topics'] = serialize($tracked_topics);
-
-		$db->query('UPDATE '.$db->prefix.'users SET tracked_topics=\''.$pun_user['tracked_topics'].'\' WHERE id='.$pun_user['id']) or error('Unable to update tracked topics', __FILE__, __LINE__, $db->error());
-	}
-}
-
-#
-#---------[ 7. FIND (line: 208) ]---------------------------------------------
-#
 
 //
 // Extract array of tracked topics from cookie
@@ -162,7 +100,7 @@ function get_tracked_topics()
 	if (!$cookie_data)
 		return array('topics' => array(), 'forums' => array());
 
-	if (strlen($cookie_data) > 4048)
+	if (strlen($cookie_data) > FORUM_MAX_COOKIE_SIZE)
 		return array('topics' => array(), 'forums' => array());
 
 	// Unserialize data from cookie
@@ -181,41 +119,510 @@ function get_tracked_topics()
 }
 
 #
+#---------[ 5. REPLACE WITH ]---------------------------------------------
+#
+
+//
+// Mark as read specified data (all, forum, topic)
+// This function is very much inspired by the markread()
+// from the phpBB Group forum software phpBB3 (http://www.phpbb.com)
+//
+function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, $last_post = 0, $mark_time = false)
+{
+	global $db, $pun_user;
+
+	if ($mode == 'all')
+	{
+		if ($forum_id !== false || !empty($forum_id))
+			return false;
+
+		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id']);
+		$db->query('DELETE FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id']);
+		$db->query('UPDATE '.$db->prefix.'users SET last_mark = '.time().' WHERE id = '.$pun_user['id']);
+	}
+	else if ($mode == 'forum')
+	{
+		// Mark all topics in forums read
+		// TODO: Do we need forums array? Will subforums be implemented in 2.0?
+		if (!is_array($forum_id))
+			$forum_id = array($forum_id);
+
+		$forum_id_sql = 'IN ('.implode(', ', $forum_id).')';
+
+		// Check whether there are some unread topics
+		$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics AS t
+			LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id
+			LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND t.forum_id = ft.forum_id
+			WHERE t.forum_id NOT '.$forum_id_sql.' AND t.last_post > '.$pun_user['last_mark'].' AND (
+					(tt.mark_time IS NOT NULL AND t.last_post > tt.mark_time) OR
+					(tt.mark_time IS NULL AND ft.mark_time IS NOT NULL AND t.last_post > ft.mark_time) OR
+					(tt.mark_time IS NULL AND ft.mark_time IS NULL))
+			LIMIT 1');
+
+		// If there aren't, delete user's topic and forum tracks and update user's last_mark value
+		if (!$db->num_rows($result))
+		{
+			mark_read('all');
+			return false;
+		}
+
+		// Delete user's topic track entries
+		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id '.$forum_id_sql);
+
+		// Update forum last mark value for the current user (or insert when it does not exist)
+		foreach ($forum_id as $fid)
+		{
+			$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid);
+			if ($db->num_rows($result))
+				$db->query('UPDATE '.$db->prefix.'forums_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid);
+			else
+				$db->query('INSERT INTO '.$db->prefix.'forums_track (user_id, forum_id, mark_time) VALUES('.$pun_user['id'].', '.$fid.', '.time().')');
+		}
+	}
+	else if ($mode == 'topic')
+	{
+		if (!$post_time)
+			$post_time = time();
+
+		// Determine the users last forum mark time if not given.
+		if ($mark_time === false)
+			$mark_time = $pun_user['last_mark'];
+
+		// Update topic track last mark value (or insert when it does not exist)
+		$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id.' AND topic_id = '.$topic_id);
+		if ($db->num_rows($result))
+			$db->query('UPDATE '.$db->prefix.'topics_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id.' AND topic_id = '.$topic_id);
+		else
+			$db->query('INSERT INTO '.$db->prefix.'topics_track (user_id, forum_id, topic_id, mark_time) VALUES('.$pun_user['id'].', '.$forum_id.', '.$topic_id.', '.time().')');
+
+		// Check the forum for any left unread topics (if we do not mark forum as read before).
+		// If there are none, we mark the forum as read.
+		if ($mark_time < $last_post)
+		{
+			$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics AS t
+				LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id
+				WHERE t.forum_id = '.$forum_id.' AND t.last_post > '.$mark_time.' AND t.moved_to IS NULL AND (tt.topic_id IS NULL OR tt.mark_time < t.last_post)
+				LIMIT 1');
+
+			if (!$db->num_rows($result))
+				mark_read('forum', $forum_id);
+		}
+	}
+}
+
+//
+// Get tracked topics by using already fetched info
+// This function is very much inspired by the get_topic_tracking_info()
+// from the phpBB Group forum software phpBB3 (http://www.phpbb.com)
+//
+function get_tracked_topics($forum_id, $topic_ids, $topic_list, $forum_mark_time)
+{
+	global $pun_user;
+
+	$last_read = array();
+
+	if (!is_array($topic_ids))
+		$topic_ids = array($topic_ids);
+
+	foreach ($topic_ids as $topic_id)
+	{
+		if (!empty($topic_list[$topic_id]['mark_time']))
+			$last_read[$topic_id] = $topic_list[$topic_id]['mark_time'];
+	}
+
+	$topic_ids = array_diff($topic_ids, array_keys($last_read));
+
+	if (!empty($topic_ids))
+	{
+		$mark_time = array();
+
+		if (!empty($forum_mark_time[$forum_id]) && $forum_mark_time[$forum_id] !== false)
+			$mark_time[$forum_id] = $forum_mark_time[$forum_id];
+
+		$user_lastmark = (isset($mark_time[$forum_id])) ? $mark_time[$forum_id] : $pun_user['last_mark'];
+
+		foreach ($topic_ids as $topic_id)
+			$last_read[$topic_id] = $user_lastmark;
+	}
+
+	return $last_read;
+}
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	// Delete any subscriptions for this topic
+	$db->query('DELETE FROM '.$db->prefix.'topic_subscriptions WHERE topic_id='.$topic_id) or error('Unable to delete subscriptions', __FILE__, __LINE__, $db->error());
+
+
+#
+#---------[ 8. AFTER ADD ]---------------------------------------------------
+#
+
+	$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE topic_id = '.$topic_id);
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+index.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$tracked_topics = get_tracked_topics();
+
+#
+#---------[ 8. REPLACE WITH (just delete the above line) ]---------------------------------------------------
+#
+
+	// $tracked_topics = get_tracked_topics();
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+$result = $db->query('SELECT c.id AS cid, c.cat_name, f.id AS fid, f.forum_name, f.forum_desc, f.redirect_url, f.moderators, f.num_topics, f.num_posts, f.last_post, f.last_post_id, f.last_poster FROM '.$db->prefix.'categories AS c INNER JOIN '.$db->prefix.'forums AS f ON c.id=f.cat_id LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') WHERE fp.read_forum IS NULL OR fp.read_forum=1 ORDER BY c.disp_position, c.id, f.disp_position', true) or error('Unable to fetch category/forum list', __FILE__, __LINE__, $db->error());
+
+#
 #---------[ 8. REPLACE WITH ]---------------------------------------------------
 #
 
-//
-// Extract array of tracked topics from cookie
-//
-function get_tracked_topics()
+$sql_mark_time = $sql_forums_track = '';
+if (!$pun_user['is_guest'])
 {
-	global $pun_user;
-	if($pun_user['tracked_topics'])
-		return unserialize($pun_user['tracked_topics']);
-	else
-		return array('topics' => array(), 'forums' => array());
+	// Forum tracking
+	$sql_mark_time = ', ft.mark_time AS forum_mark_time';
+	$sql_forums_track = ' LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND f.id = ft.forum_id';
 }
-
-
-#
-#---------[ 4. OPEN ]---------------------------------------------------------
-#
-
-misc.php
+$result = $db->query('SELECT c.id AS cid, c.cat_name, f.id AS fid, f.forum_name, f.forum_desc, f.redirect_url, f.moderators, f.num_topics, f.num_posts, f.last_post, f.last_post_id, f.last_poster'.$sql_mark_time.' FROM '.$db->prefix.'categories AS c INNER JOIN '.$db->prefix.'forums AS f ON c.id=f.cat_id LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].')'.$sql_forums_track.' WHERE fp.read_forum IS NULL OR fp.read_forum=1 ORDER BY c.disp_position, c.id, f.disp_position', true) or error('Unable to fetch category/forum list', __FILE__, __LINE__, $db->error());
 
 #
 #---------[ 5. FIND (line: 10) ]---------------------------------------------
 #
 
-	$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$pun_user['logged'].' WHERE id='.$pun_user['id']) or error('Unable to update user last visit data', __FILE__, __LINE__, $db->error());
+	// Are there new posts since our last visit?
+	if (!$pun_user['is_guest'] && $cur_forum['last_post'] > $pun_user['last_visit'] && (empty($tracked_topics['forums'][$cur_forum['fid']]) || $cur_forum['last_post'] > $tracked_topics['forums'][$cur_forum['fid']]))
+	{
+		// There are new posts in this forum, but have we read all of them already?
+		foreach ($new_topics[$cur_forum['fid']] as $check_topic_id => $check_last_post)
+		{
+			if ((empty($tracked_topics['topics'][$check_topic_id]) || $tracked_topics['topics'][$check_topic_id] < $check_last_post) && (empty($tracked_topics['forums'][$cur_forum['fid']]) || $tracked_topics['forums'][$cur_forum['fid']] < $check_last_post))
+			{
+				$item_status .= ' inew';
+				$forum_field_new = '<span class="newtext">[ <a href="search.php?action=show_new&amp;fid='.$cur_forum['fid'].'">'.$lang_common['New posts'].'</a> ]</span>';
+				$icon_type = 'icon icon-new';
 
-
+				break;
+			}
+		}
+	}
 
 #
 #---------[ 6. REPLACE WITH ]-------------------------------------------------
 #
 
-	$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$pun_user['logged'].', tracked_topics=null WHERE id='.$pun_user['id']) or error('Unable to update user last visit data', __FILE__, __LINE__, $db->error());
+	// Are there new posts since our last visit?
+	if (!$pun_user['is_guest'])
+	{
+		 if (empty($cur_forum['forum_mark_time']))
+			$cur_forum['forum_mark_time'] = $pun_user['last_mark'];
+
+		if ($cur_forum['last_post'] > $cur_forum['forum_mark_time'])
+		{
+			$item_status .= ' inew';
+			$forum_field_new = '<span class="newtext">[ <a href="search.php?action=show_new&amp;fid='.$cur_forum['fid'].'">'.$lang_common['New posts'].'</a> ]</span>';
+			$icon_type = 'icon icon-new';
+		}
+	}
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+login.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	set_tracked_topics(null);
+
+#
+#---------[ 8. REPLACE WITH (just delete the above line) ]---------------------------------------------------
+#
+
+ 	// set_tracked_topics(null);
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+misc.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$db->query('UPDATE '.$db->prefix.'users SET last_visit='.$pun_user['logged'].' WHERE id='.$pun_user['id']) or error('Unable to update user last visit data', __FILE__, __LINE__, $db->error());
+
+	// Reset tracked topics
+	set_tracked_topics(null);
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+	mark_read('all');
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$tracked_topics = get_tracked_topics();
+	$tracked_topics['forums'][$fid] = time();
+	set_tracked_topics($tracked_topics);
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+	mark_read('forum', $fid);
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+viewforum.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+// Get topic/forum tracking data
+if (!$pun_user['is_guest'])
+	$tracked_topics = get_tracked_topics();
+
+#
+#---------[ 8. REPLACE WITH (just delete the above lines) ]---------------------------------------------------
+#
+
+// Get topic/forum tracking data
+// if (!$pun_user['is_guest'])
+// 	$tracked_topics = get_tracked_topics();
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$result = $db->query('SELECT f.forum_name, f.redirect_url, f.moderators, f.num_topics, f.sort_by, fp.post_topics, s.user_id AS is_subscribed FROM '.$db->prefix.'forums AS f LEFT JOIN '.$db->prefix.'forum_subscriptions AS s ON (f.id=s.forum_id AND s.user_id='.$pun_user['id'].') LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND f.id='.$id) or error('Unable to fetch forum info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+	$result = $db->query('SELECT f.forum_name, f.redirect_url, f.moderators, f.num_topics, f.sort_by, fp.post_topics, s.user_id AS is_subscribed, ft.mark_time AS forum_mark_time FROM '.$db->prefix.'forums AS f LEFT JOIN '.$db->prefix.'forum_subscriptions AS s ON (f.id=s.forum_id AND s.user_id='.$pun_user['id'].') LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND f.id = ft.forum_id WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND f.id='.$id) or error('Unable to fetch forum info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 5. FIND (line: 10) ]---------------------------------------------
+#
+
+	// Fetch list of topics to display on this page
+	if ($pun_user['is_guest'] || $pun_config['o_show_dot'] == '0')
+	{
+		// Without "the dot"
+		$sql = 'SELECT id, poster, subject, posted, last_post, last_post_id, last_poster, num_views, num_replies, closed, sticky, moved_to FROM '.$db->prefix.'topics WHERE id IN('.implode(',', $topic_ids).') ORDER BY sticky DESC, '.$sort_by.', id DESC';
+	}
+	else
+	{
+		// With "the dot"
+		$sql = 'SELECT p.poster_id AS has_posted, t.id, t.subject, t.poster, t.posted, t.last_post, t.last_post_id, t.last_poster, t.num_views, t.num_replies, t.closed, t.sticky, t.moved_to FROM '.$db->prefix.'topics AS t LEFT JOIN '.$db->prefix.'posts AS p ON t.id=p.topic_id AND p.poster_id='.$pun_user['id'].' WHERE t.id IN('.implode(',', $topic_ids).') GROUP BY t.id'.($db_type == 'pgsql' ? ', t.subject, t.poster, t.posted, t.last_post, t.last_post_id, t.last_poster, t.num_views, t.num_replies, t.closed, t.sticky, t.moved_to, p.poster_id' : '').' ORDER BY t.sticky DESC, t.'.$sort_by.', t.id DESC';
+	}
+
+#
+#---------[ 6. REPLACE WITH ]-------------------------------------------------
+#
+
+	$sql_mark_time = $sql_topics_track = '';
+	if (!$pun_user['is_guest'])
+	{
+		// Forum tracking
+		$sql_mark_time = ', tt.mark_time';
+		$sql_topics_track = ' LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id';
+	}
+
+	// Fetch list of topics to display on this page
+	if ($pun_user['is_guest'] || $pun_config['o_show_dot'] == '0')
+	{
+		// Without "the dot"
+		$sql = 'SELECT id, poster, subject, posted, last_post, last_post_id, last_poster, num_views, num_replies, closed, sticky, moved_to'.$sql_mark_time.' FROM '.$db->prefix.'topics'.$sql_topics_track.' WHERE id IN('.implode(',', $topic_ids).') ORDER BY sticky DESC, '.$sort_by.', id DESC';
+	}
+	else
+	{
+		// With "the dot"
+		$sql = 'SELECT p.poster_id AS has_posted, t.id, t.subject, t.poster, t.posted, t.last_post, t.last_post_id, t.last_poster, t.num_views, t.num_replies, t.closed, t.sticky, t.moved_to'.$sql_mark_time.' FROM '.$db->prefix.'topics AS t LEFT JOIN '.$db->prefix.'posts AS p ON t.id=p.topic_id AND p.poster_id='.$pun_user['id'].$sql_topics_track.' WHERE t.id IN('.implode(',', $topic_ids).') GROUP BY t.id'.($db_type == 'pgsql' ? ', t.subject, t.poster, t.posted, t.last_post, t.last_post_id, t.last_poster, t.num_views, t.num_replies, t.closed, t.sticky, t.moved_to, p.poster_id' : '').' ORDER BY t.sticky DESC, t.'.$sort_by.', t.id DESC';
+	}
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$topic_count = 0;
+	while ($cur_topic = $db->fetch_assoc($result))
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+	$topics = array();
+	while ($cur_topic = $db->fetch_assoc($result))
+		$topics[] = $cur_topic;
+
+	// Get tracked topics
+	if (!$pun_user['is_guest'])
+	{
+		// Generate topic list...
+		$topic_list = array();
+		foreach ($topics as $cur_topic)
+			$topic_list[$cur_topic['id']] = $cur_topic;
+
+		$tracked_topics = get_tracked_topics($id, $topic_ids, $topic_list, array($id => $cur_forum['forum_mark_time']), false);
+	}
+
+	$topic_count = 0;
+	foreach ($topics as $cur_topic)
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		if (!$pun_user['is_guest'] && $cur_topic['last_post'] > $pun_user['last_visit'] && (!isset($tracked_topics['topics'][$cur_topic['id']]) || $tracked_topics['topics'][$cur_topic['id']] < $cur_topic['last_post']) && (!isset($tracked_topics['forums'][$id]) || $tracked_topics['forums'][$id] < $cur_topic['last_post']) && is_null($cur_topic['moved_to']))
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+		if (!$pun_user['is_guest'] && isset($tracked_topics[$cur_topic['id']]) && $cur_topic['last_post'] > $tracked_topics[$cur_topic['id']] && $cur_topic['moved_to'] == null)
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+viewtopic.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		// We need to check if this topic has been viewed recently by the user
+		$tracked_topics = get_tracked_topics();
+		$last_viewed = isset($tracked_topics['topics'][$id]) ? $tracked_topics['topics'][$id] : $pun_user['last_visit'];
+
+		$result = $db->query('SELECT MIN(id) FROM '.$db->prefix.'posts WHERE topic_id='.$id.' AND posted>'.$last_viewed) or error('Unable to fetch first new post info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+		// Check whether there are some unread topics
+		$result = $db->query('SELECT MIN(p.id) AS new_pid FROM '.$db->prefix.'posts AS p
+			LEFT JOIN '.$db->prefix.'topics AS t ON t.id = p.topic_id
+			LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id
+			LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND t.forum_id = ft.forum_id
+			WHERE p.topic_id = '.$id.' AND p.posted > '.$pun_user['last_mark'].' AND (
+					(tt.mark_time IS NOT NULL AND p.posted > tt.mark_time) OR
+					(tt.mark_time IS NULL AND ft.mark_time IS NOT NULL AND p.posted > ft.mark_time) OR
+					(tt.mark_time IS NULL AND ft.mark_time IS NULL))
+			LIMIT 1');
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+if (!$pun_user['is_guest'])
+	$result = $db->query('SELECT t.subject, t.closed, t.num_replies, t.sticky, t.first_post_id, f.id AS forum_id, f.forum_name, f.moderators, fp.post_replies, s.user_id AS is_subscribed FROM '.$db->prefix.'topics AS t INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id LEFT JOIN '.$db->prefix.'topic_subscriptions AS s ON (t.id=s.topic_id AND s.user_id='.$pun_user['id'].') LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND t.id='.$id.' AND t.moved_to IS NULL') or error('Unable to fetch topic info', __FILE__, __LINE__, $db->error());
+else
+	$result = $db->query('SELECT t.subject, t.closed, t.num_replies, t.sticky, t.first_post_id, f.id AS forum_id, f.forum_name, f.moderators, fp.post_replies, 0 AS is_subscribed FROM '.$db->prefix.'topics AS t INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND t.id='.$id.' AND t.moved_to IS NULL') or error('Unable to fetch topic info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+if (!$pun_user['is_guest'])
+	$result = $db->query('SELECT t.subject, t.closed, t.num_replies, t.sticky, t.first_post_id, t.last_post, f.id AS forum_id, f.forum_name, f.moderators, fp.post_replies, s.user_id AS is_subscribed, tt.mark_time, ft.mark_time as forum_mark_time FROM '.$db->prefix.'topics AS t INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id LEFT JOIN '.$db->prefix.'topic_subscriptions AS s ON (t.id=s.topic_id AND s.user_id='.$pun_user['id'].') LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND t.forum_id = ft.forum_id WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND t.id='.$id.' AND t.moved_to IS NULL') or error('Unable to fetch topic info', __FILE__, __LINE__, $db->error());
+else
+	$result = $db->query('SELECT t.subject, t.closed, t.num_replies, t.sticky, t.first_post_id, t.last_post, f.id AS forum_id, f.forum_name, f.moderators, fp.post_replies, 0 AS is_subscribed FROM '.$db->prefix.'topics AS t INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND t.id='.$id.' AND t.moved_to IS NULL') or error('Unable to fetch topic info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 5. FIND (line: 10) ]---------------------------------------------
+#
+
+// Add/update this topic in our list of tracked topics
+if (!$pun_user['is_guest'])
+{
+	$tracked_topics = get_tracked_topics();
+	$tracked_topics['topics'][$id] = time();
+	set_tracked_topics($tracked_topics);
+}
+
+#
+#---------[ 6. REPLACE WITH ]-------------------------------------------------
+#
+
+// // Add/update this topic in our list of tracked topics
+// if (!$pun_user['is_guest'])
+// {
+// 	$tracked_topics = get_tracked_topics();
+// 	$tracked_topics['topics'][$id] = time();
+// 	set_tracked_topics($tracked_topics);
+// }
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+while ($cur_post = $db->fetch_assoc($result))
+
+#
+#---------[ 8. BEFORE ADD ]---------------------------------------------------
+#
+
+// Get tracked topics
+if (!$pun_user['is_guest'])
+	$tracked_topics = get_tracked_topics($cur_topic['forum_id'], $id, array($id => $cur_topic), array($cur_topic['forum_id'] => $cur_topic['forum_mark_time']));
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$signature = '';
+
+#
+#---------[ 8. AFTER ADD ]---------------------------------------------------
+#
+
+	if ($cur_post['posted'] > $max_post_time)
+		$max_post_time = $cur_post['posted'];
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+$forum_id = $cur_topic['forum_id'];
+
+#
+#---------[ 8. BEFORE ADD ]---------------------------------------------------
+#
+
+if (!$pun_user['is_guest'])
+{
+
+	// Only mark topic if it's currently unread. Also make sure we do not set topic tracking back if earlier pages are viewed.
+	if (isset($tracked_topics[$id]) && $cur_topic['last_post'] > $tracked_topics[$id] && $max_post_time > $tracked_topics[$id])
+		mark_read('topic', $cur_topic['forum_id'], $id, $max_post_time, $cur_topic['last_post'], (isset($cur_topic['forum_mark_time'])) ? $cur_topic['forum_mark_time'] : false);
+}
 
 #
 #---------[ 20. SAVE/UPLOAD ]-------------------------------------------------
