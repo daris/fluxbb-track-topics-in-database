@@ -56,6 +56,19 @@ include/functions.php
 #---------[ 5. FIND ]---------------------------------------------
 #
 
+				// Reset tracked topics
+				set_tracked_topics(null);
+#
+#---------[ 5. REPLACE WITH ]---------------------------------------------
+#
+
+				// Reset tracked topics
+				// set_tracked_topics(null);
+
+#
+#---------[ 5. FIND ]---------------------------------------------
+#
+
 //
 // Save array of tracked topics in cookie
 //
@@ -603,8 +616,48 @@ if (!$pun_user['is_guest'])
 #---------[ 8. AFTER ADD ]---------------------------------------------------
 #
 
+	$icon_type = 'icon';
+
 	if ($cur_post['posted'] > $max_post_time)
 		$max_post_time = $cur_post['posted'];
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	// Perform the main parsing of the message (BBCode, smilies, censor words etc)
+	$cur_post['message'] = parse_message($cur_post['message'], $cur_post['hide_smilies']);
+
+#
+#---------[ 8. BEFORE ADD ]---------------------------------------------------
+#
+
+	if (!$pun_user['is_guest'] && isset($tracked_topics[$id]) && $cur_post['posted'] > $tracked_topics[$id])
+	{
+		$item_status = 'inew';
+		$icon_type = 'icon icon-new';
+		$icon_text = $lang_common['New icon'];
+	}
+	else
+	{
+		$item_status = '';
+		$icon_text = '<!-- -->';
+	}
+
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+<div id="p<?php echo $cur_post['id'] ?>" class="blockpost<?php echo ($post_count % 2 == 0) ? ' roweven' : ' rowodd' ?><?php if ($cur_post['id'] == $cur_topic['first_post_id']) echo ' firstpost'; ?><?php if ($post_count == 1) echo ' blockpost1'; ?>">
+	<h2><span><span class="conr">#<?php echo ($start_from + $post_count) ?></span> <a href="viewtopic.php?pid=<?php echo $cur_post['id'].'#p'.$cur_post['id'] ?>"><?php echo format_time($cur_post['posted']) ?></a></span></h2>
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+<div id="p<?php echo $cur_post['id'] ?>" class="blockpost<?php echo ($post_count % 2 == 0) ? ' roweven' : ' rowodd' ?><?php if ($cur_post['id'] == $cur_topic['first_post_id']) echo ' firstpost'; ?><?php if ($post_count == 1) echo ' blockpost1'; ?><?php if ($item_status != '') echo ' '.$item_status ?>">
+	<h2><span><span class="conr">#<?php echo ($start_from + $post_count) ?></span><div class="<?php echo $icon_type ?>"><div class="nosize"><?php echo $icon_text ?></div></div> &nbsp; <a href="viewtopic.php?pid=<?php echo $cur_post['id'].'#p'.$cur_post['id'] ?>"><?php echo format_time($cur_post['posted']) ?></a></span></h2>
 
 #
 #---------[ 7. FIND (line: 208) ]---------------------------------------------
@@ -623,6 +676,237 @@ if (!$pun_user['is_guest'])
 	if (isset($tracked_topics[$id]) && $cur_topic['last_post'] > $tracked_topics[$id] && $max_post_time > $tracked_topics[$id])
 		mark_read('topic', $cur_topic['forum_id'], $id, $max_post_time, $cur_topic['last_post'], (isset($cur_topic['forum_mark_time'])) ? $cur_topic['forum_mark_time'] : false);
 }
+
+#
+#---------[ 8. OPEN ]---------------------------------------------------
+#
+
+admin_forums.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		$db->query('DELETE FROM '.$db->prefix.'forum_subscriptions WHERE forum_id='.$forum_id) or error('Unable to delete subscriptions', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 8. AFTER ADD ]---------------------------------------------------
+#
+
+		// Delete forum tracking data
+		$db->query('DELETE FROM '.$db->prefix.'forums_track WHERE forum_id='.$forum_id) or error('Unable to delete forums track', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+moderate.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+// Get topic/forum tracking data
+if (!$pun_user['is_guest'])
+	$tracked_topics = get_tracked_topics();
+
+#
+#---------[ 8. REPLACE WITH (just delete the above lines) ]---------------------------------------------------
+#
+
+// Get topic/forum tracking data
+// if (!$pun_user['is_guest'])
+// 	$tracked_topics = get_tracked_topics();
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+$result = $db->query('SELECT f.forum_name, f.redirect_url, f.num_topics, f.sort_by FROM '.$db->prefix.'forums AS f LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND f.id='.$fid) or error('Unable to fetch forum info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+$result = $db->query('SELECT f.forum_name, f.redirect_url, f.num_topics, f.sort_by, ft.mark_time AS forum_mark_time FROM '.$db->prefix.'forums AS f LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND f.id = ft.forum_id WHERE (fp.read_forum IS NULL OR fp.read_forum=1) AND f.id='.$fid) or error('Unable to fetch forum info', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 5. FIND (line: 10) ]---------------------------------------------
+#
+
+	$result = $db->query('SELECT id, poster, subject, posted, last_post, last_post_id, last_poster, num_views, num_replies, closed, sticky, moved_to FROM '.$db->prefix.'topics WHERE id IN('.implode(',', $topic_ids).') ORDER BY sticky DESC, '.$sort_by.', id DESC') or error('Unable to fetch topic list for forum', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 6. REPLACE WITH ]-------------------------------------------------
+#
+
+	$result = $db->query('SELECT t.id, t.poster, t.subject, t.posted, t.last_post, t.last_post_id, t.last_poster, t.num_views, t.num_replies, t.closed, t.sticky, t.moved_to, tt.mark_time FROM '.$db->prefix.'topics AS t LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id WHERE t.id IN('.implode(',', $topic_ids).') ORDER BY t.sticky DESC, '.$sort_by.', t.id DESC') or error('Unable to fetch topic list for forum', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+	$topic_count = 0;
+	while ($cur_topic = $db->fetch_assoc($result))
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+	$topics = array();
+	while ($cur_topic = $db->fetch_assoc($result))
+		$topics[] = $cur_topic;
+
+	// Get tracked topics
+	if (!$pun_user['is_guest'])
+	{
+		// Generate topic list...
+		$topic_list = array();
+		foreach ($topics as $cur_topic)
+			$topic_list[$cur_topic['id']] = $cur_topic;
+
+		$tracked_topics = get_tracked_topics($fid, $topic_ids, $topic_list, array($fid => $cur_forum['forum_mark_time']), false);
+	}
+
+	$topic_count = 0;
+	foreach ($topics as $cur_topic)
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		if (!$ghost_topic && $cur_topic['last_post'] > $pun_user['last_visit'] && (!isset($tracked_topics['topics'][$cur_topic['id']]) || $tracked_topics['topics'][$cur_topic['id']] < $cur_topic['last_post']) && (!isset($tracked_topics['forums'][$fid]) || $tracked_topics['forums'][$fid] < $cur_topic['last_post']))
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+		if (!$ghost_topic && isset($tracked_topics[$cur_topic['id']]) && $cur_topic['last_post'] > $tracked_topics[$cur_topic['id']])
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+post.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+			$tracked_topics = get_tracked_topics();
+			$tracked_topics['topics'][$new_tid] = time();
+			set_tracked_topics($tracked_topics);
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+			// $tracked_topics = get_tracked_topics();
+			// $tracked_topics['topics'][$new_tid] = time();
+			// set_tracked_topics($tracked_topics);
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+register.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		$db->query('INSERT INTO '.$db->prefix.'users (username, group_id, password, email, email_setting, timezone, dst, language, style, registered, registration_ip, last_visit) VALUES(\''.$db->escape($username).'\', '.$intial_group_id.', \''.$password_hash.'\', \''.$db->escape($email1).'\', '.$email_setting.', '.$timezone.' , '.$dst.', \''.$db->escape($language).'\', \''.$pun_config['o_default_style'].'\', '.$now.', \''.get_remote_address().'\', '.$now.')') or error('Unable to create user', __FILE__, __LINE__, $db->error());
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+		$db->query('INSERT INTO '.$db->prefix.'users (username, group_id, password, email, email_setting, timezone, dst, language, style, registered, registration_ip, last_visit, last_mark) VALUES(\''.$db->escape($username).'\', '.$intial_group_id.', \''.$password_hash.'\', \''.$db->escape($email1).'\', '.$email_setting.', '.$timezone.' , '.$dst.', \''.$db->escape($language).'\', \''.$pun_config['o_default_style'].'\', '.$now.', \''.get_remote_address().'\', '.$now.', '.$now.')') or error('Unable to create user', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 7. OPEN ]---------------------------------------------
+#
+
+search.php
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		// Run the query and fetch the results
+		if ($show_as == 'posts')
+			$result = $db->query('SELECT p.id AS pid, p.poster AS pposter, p.posted AS pposted, p.poster_id, p.message, p.hide_smilies, t.id AS tid, t.poster, t.subject, t.first_post_id, t.last_post, t.last_post_id, t.last_poster, t.num_replies, t.forum_id, f.forum_name FROM '.$db->prefix.'posts AS p INNER JOIN '.$db->prefix.'topics AS t ON t.id=p.topic_id INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id WHERE p.id IN('.implode(',', $search_ids).') ORDER BY '.$sort_by_sql.' '.$sort_dir) or error('Unable to fetch search results', __FILE__, __LINE__, $db->error());
+		else
+			$result = $db->query('SELECT t.id AS tid, t.poster, t.subject, t.last_post, t.last_post_id, t.last_poster, t.num_replies, t.closed, t.sticky, t.forum_id, f.forum_name FROM '.$db->prefix.'topics AS t INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id WHERE t.id IN('.implode(',', $search_ids).') ORDER BY '.$sort_by_sql.' '.$sort_dir) or error('Unable to fetch search results', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+		$sql_track_select = $sql_track_joins = '';
+		if (!$pun_user['is_guest'])
+		{
+			$sql_track_select = ', tt.mark_time, ft.mark_time AS forum_mark_time';
+			$sql_track_joins = ' LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND t.forum_id = ft.forum_id';
+		}
+
+		// Run the query and fetch the results
+		if ($show_as == 'posts')
+			$result = $db->query('SELECT p.id AS pid, p.poster AS pposter, p.posted AS pposted, p.poster_id, p.message, p.hide_smilies, t.id AS tid, t.poster, t.subject, t.first_post_id, t.last_post, t.last_post_id, t.last_poster, t.num_replies, t.forum_id, f.forum_name'.$sql_track_select.' FROM '.$db->prefix.'posts AS p INNER JOIN '.$db->prefix.'topics AS t ON t.id=p.topic_id INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id'.$sql_track_joins.' WHERE p.id IN('.implode(',', $search_ids).') ORDER BY '.$sort_by_sql.' '.$sort_dir) or error('Unable to fetch search results', __FILE__, __LINE__, $db->error());
+		else
+			$result = $db->query('SELECT t.id AS tid, t.poster, t.subject, t.last_post, t.last_post_id, t.last_poster, t.num_replies, t.closed, t.sticky, t.forum_id, f.forum_name'.$sql_track_select.' FROM '.$db->prefix.'topics AS t INNER JOIN '.$db->prefix.'forums AS f ON f.id=t.forum_id'.$sql_track_joins.' WHERE t.id IN('.implode(',', $search_ids).') ORDER BY '.$sort_by_sql.' '.$sort_dir) or error('Unable to fetch search results', __FILE__, __LINE__, $db->error());
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+		// Get topic/forum tracking data
+		if (!$pun_user['is_guest'])
+			$tracked_topics = get_tracked_topics();
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+		// Get tracked topics
+		if (!$pun_user['is_guest'])
+		{
+			$tracked_topics = array();
+
+			// Generate topic forum list...
+			$forum_list = $topic_list = array();
+			foreach ($search_set as $cur_search)
+			{
+				$forum_list[$cur_search['forum_id']]['forum_mark_time'] = isset($cur_search['forum_mark_time']) ? $cur_search['forum_mark_time'] : 0;
+				$forum_list[$cur_search['forum_id']]['topics'][] = $cur_search['tid'];
+
+				$topic_list[$cur_search['tid']] = $cur_search;
+			}
+
+			foreach ($forum_list as $f_id => $cur_forum)
+				$tracked_topics += get_tracked_topics($f_id, $cur_forum['topics'], $topic_list, array($f_id => $cur_forum['forum_mark_time']));
+		}
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+				if (!$pun_user['is_guest'] && $cur_search['last_post'] > $pun_user['last_visit'] && (!isset($tracked_topics['topics'][$cur_search['tid']]) || $tracked_topics['topics'][$cur_search['tid']] < $cur_search['last_post']) && (!isset($tracked_topics['forums'][$cur_search['forum_id']]) || $tracked_topics['forums'][$cur_search['forum_id']] < $cur_search['last_post']))
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+				if (!$pun_user['is_guest'] && (isset($tracked_topics[$cur_search['tid']]) && $cur_search['pposted'] > $tracked_topics[$cur_search['tid']]))
+
+#
+#---------[ 7. FIND (line: 208) ]---------------------------------------------
+#
+
+				if (!$pun_user['is_guest'] && $cur_search['last_post'] > $pun_user['last_visit'] && (!isset($tracked_topics['topics'][$cur_search['tid']]) || $tracked_topics['topics'][$cur_search['tid']] < $cur_search['last_post']) && (!isset($tracked_topics['forums'][$cur_search['forum_id']]) || $tracked_topics['forums'][$cur_search['forum_id']] < $cur_search['last_post']))
+
+#
+#---------[ 8. REPLACE WITH ]---------------------------------------------------
+#
+
+				if (!$pun_user['is_guest'] && (isset($tracked_topics[$cur_search['tid']]) && $cur_search['last_post'] > $tracked_topics[$cur_search['tid']]))
 
 #
 #---------[ 20. SAVE/UPLOAD ]-------------------------------------------------
