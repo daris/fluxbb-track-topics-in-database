@@ -162,7 +162,7 @@ function get_tracked_topics()
 	if (!$cookie_data)
 		return array('topics' => array(), 'forums' => array());
 
-	if (strlen($cookie_data) > 4048)
+	if (strlen($cookie_data) > FORUM_MAX_COOKIE_SIZE)
 		return array('topics' => array(), 'forums' => array());
 
 	// Unserialize data from cookie
