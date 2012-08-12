@@ -123,16 +123,14 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 	{
 		// Mark all topics in forums read
 		// TODO: Do we need forums array? Will subforums be implemented in 2.0?
-		if (!is_array($forum_id))
-			$forum_id = array($forum_id);
-
-		$forum_id_sql = 'IN ('.implode(', ', $forum_id).')';
+		// if (!is_array($forum_id))
+		// 	$forum_id = array($forum_id);
 
 		// Check whether there are some unread topics
 		$result = $db->query('SELECT 1 FROM '.$db->prefix.'topics AS t
 			LEFT JOIN '.$db->prefix.'topics_track AS tt ON tt.user_id = '.$pun_user['id'].' AND t.id = tt.topic_id
 			LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND t.forum_id = ft.forum_id
-			WHERE t.forum_id NOT '.$forum_id_sql.' AND t.last_post > '.$pun_user['last_mark'].' AND (
+			WHERE t.forum_id <> '.$forum_id.' AND t.last_post > '.$pun_user['last_mark'].' AND (
 					(tt.mark_time IS NOT NULL AND t.last_post > tt.mark_time) OR
 					(tt.mark_time IS NULL AND ft.mark_time IS NOT NULL AND t.last_post > ft.mark_time) OR
 					(tt.mark_time IS NULL AND ft.mark_time IS NULL))
@@ -146,17 +144,17 @@ function mark_read($mode, $forum_id = false, $topic_id = false, $post_time = 0, 
 		}
 
 		// Delete user's topic track entries
-		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id '.$forum_id_sql) or error('Unable to delete topics track', __FILE__, __LINE__, $db->error());
+		$db->query('DELETE FROM '.$db->prefix.'topics_track WHERE user_id = '.$pun_user['id'].' AND forum_id <> '.$forum_id) or error('Unable to delete topics track', __FILE__, __LINE__, $db->error());
 
 		// Update forum last mark value for the current user (or insert when it does not exist)
-		foreach ($forum_id as $fid)
-		{
-			$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid) or error('Unable to get forums track', __FILE__, __LINE__, $db->error());
+		// foreach ($forum_id as $fid)
+		// {
+			$result = $db->query('SELECT 1 FROM '.$db->prefix.'forums_track WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id) or error('Unable to get forums track', __FILE__, __LINE__, $db->error());
 			if ($db->num_rows($result))
-				$db->query('UPDATE '.$db->prefix.'forums_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$fid) or error('Unable to update forums track', __FILE__, __LINE__, $db->error());
+				$db->query('UPDATE '.$db->prefix.'forums_track SET mark_time = '.time().' WHERE user_id = '.$pun_user['id'].' AND forum_id = '.$forum_id) or error('Unable to update forums track', __FILE__, __LINE__, $db->error());
 			else
-				$db->query('INSERT INTO '.$db->prefix.'forums_track (user_id, forum_id, mark_time) VALUES('.$pun_user['id'].', '.$fid.', '.time().')') or error('Unable to insert forums track', __FILE__, __LINE__, $db->error());
-		}
+				$db->query('INSERT INTO '.$db->prefix.'forums_track (user_id, forum_id, mark_time) VALUES('.$pun_user['id'].', '.$forum_id.', '.time().')') or error('Unable to insert forums track', __FILE__, __LINE__, $db->error());
+		// }
 	}
 	else if ($mode == 'topic')
 	{
@@ -352,7 +350,7 @@ if (!$pun_user['is_guest'])
 	$sql_mark_time = ', ft.mark_time AS forum_mark_time';
 	$sql_forums_track = ' LEFT JOIN '.$db->prefix.'forums_track AS ft ON ft.user_id = '.$pun_user['id'].' AND f.id = ft.forum_id';
 }
-$result = $db->query('SELECT c.id AS cid, c.cat_name, f.id AS fid, f.forum_name, f.forum_desc, f.redirect_url, f.moderators, f.num_topics, f.num_posts, f.last_post, f.last_post_id, f.last_poster'.$sql_mark_time.' FROM '.$db->prefix.'categories AS c INNER JOIN '.$db->prefix.'forums AS f ON c.id=f.cat_id LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].')'.$sql_forums_track.' WHERE fp.read_forum IS NULL OR fp.read_forum=1 ORDER BY c.disp_position, c.id, f.disp_position', true) or error('Unable to fetch category/forum list', __FILE__, __LINE__, $db->error());
+$result = $db->query('SELECT c.id AS cid, c.cat_name, f.id AS fid, f.forum_name, f.forum_desc, f.redirect_url, f.moderators, f.num_topics, f.num_posts, f.last_post, f.last_post_id, f.last_poster '.$sql_mark_time.' FROM '.$db->prefix.'categories AS c INNER JOIN '.$db->prefix.'forums AS f ON c.id=f.cat_id LEFT JOIN '.$db->prefix.'forum_perms AS fp ON (fp.forum_id=f.id AND fp.group_id='.$pun_user['g_id'].') '.$sql_forums_track.' WHERE fp.read_forum IS NULL OR fp.read_forum=1 ORDER BY c.disp_position, c.id, f.disp_position', true) or error('Unable to fetch category/forum list', __FILE__, __LINE__, $db->error());
 
 #
 #---------[ 5. FIND (line: 10) ]---------------------------------------------
